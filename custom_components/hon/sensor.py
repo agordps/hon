@@ -178,6 +178,16 @@ async def async_setup_entry(hass, entry: ConfigEntry, async_add_entities) -> Non
             appliances.extend([HonBaseInt(hass, coordinator, entry, appliance, "remainingVolumeHotWater", "Remaining hot water")])
         if device.has("totalWorkTime"):
             appliances.extend([HonBaseWorkTime(hass, coordinator, entry, appliance)])
+        # WH (Water Heater) daily energy statistics (7-day arrays reported by the boiler;
+        # the last entry is the current day)
+        if device.has("energyConsumptionDayCp"):
+            appliances.extend([
+                HonWaterHeaterDailyEnergy(hass, coordinator, entry, appliance, "energyConsumptionDayCp", "Energy today compressor", "energy_today_compressor"),
+                HonWaterHeaterDailyEnergy(hass, coordinator, entry, appliance, "energyConsumptionDayEc", "Energy today electric element", "energy_today_element"),
+                HonWaterHeaterDailyEnergy(hass, coordinator, entry, appliance, "accumulatedHeatDay", "Heat delivered today", "heat_today"),
+                HonWaterHeaterEnergyToday(hass, coordinator, entry, appliance),
+                HonWaterHeaterCopToday(hass, coordinator, entry, appliance),
+            ])
 
         # WM additional sensors
         if device.has("currentWashCycle"):
@@ -826,3 +836,77 @@ class HonHobZoneCompositeTimer(HonBaseSensorEntity):
         # Adds hours and minutes (HH * 60 + MM)
         self._attr_native_value = (hours * 60) + minutes
 
+
+
+def _parse_series(value):
+    """Parse a boiler statistics string such as '1;1;1;2;1;1;1' into a list of floats."""
+    if value is None or value == "":
+        return []
+    out = []
+    for item in str(value).split(";"):
+        try:
+            out.append(float(item))
+        except ValueError:
+            out.append(None)
+    return out
+
+
+class HonWaterHeaterDailyEnergy(HonBaseSensorEntity):
+    """Today's value from a 7-day boiler statistics series (oldest first, last = today)."""
+
+    def __init__(self, hass, coordinator, entry, appliance, key, sensor_name, unique_key) -> None:
+        super().__init__(coordinator, appliance, key, sensor_name)
+        self._attr_unique_id = self._mac + "_" + unique_key
+        self._attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
+        self._attr_device_class = SensorDeviceClass.ENERGY
+        self._attr_icon = "mdi:lightning-bolt"
+
+    def coordinator_update(self):
+        series = _parse_series(self._device.get(self._key))
+        self._attr_native_value = series[-1] if series else None
+        self._attr_extra_state_attributes = {"last_7_days": series}
+
+
+class HonWaterHeaterEnergyToday(HonBaseSensorEntity):
+    """Compressor plus electric element energy for today."""
+
+    def __init__(self, hass, coordinator, entry, appliance) -> None:
+        super().__init__(coordinator, appliance, "energyConsumptionDayCp", "Energy today")
+        self._attr_unique_id = self._mac + "_energy_today"
+        self._attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
+        self._attr_device_class = SensorDeviceClass.ENERGY
+        self._attr_icon = "mdi:lightning-bolt-circle"
+
+    def coordinator_update(self):
+        cp = _parse_series(self._device.get("energyConsumptionDayCp"))
+        ec = _parse_series(self._device.get("energyConsumptionDayEc"))
+        if not cp:
+            self._attr_native_value = None
+            return
+        today_cp = cp[-1] or 0
+        today_ec = (ec[-1] if ec else 0) or 0
+        self._attr_native_value = today_cp + today_ec
+        n = min(len(cp), len(ec)) if ec else len(cp)
+        self._attr_extra_state_attributes = {
+            "last_7_days": [(cp[-n:][i] or 0) + ((ec[-n:][i] or 0) if ec else 0) for i in range(n)]
+        }
+
+
+class HonWaterHeaterCopToday(HonBaseSensorEntity):
+    """Heat delivered divided by electricity used today (rounded boiler data, so approximate)."""
+
+    def __init__(self, hass, coordinator, entry, appliance) -> None:
+        super().__init__(coordinator, appliance, "accumulatedHeatDay", "COP today")
+        self._attr_unique_id = self._mac + "_cop_today"
+        self._attr_icon = "mdi:heat-pump"
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+
+    def coordinator_update(self):
+        heat = _parse_series(self._device.get("accumulatedHeatDay"))
+        cp = _parse_series(self._device.get("energyConsumptionDayCp"))
+        ec = _parse_series(self._device.get("energyConsumptionDayEc"))
+        if not heat or not cp:
+            self._attr_native_value = None
+            return
+        used = (cp[-1] or 0) + ((ec[-1] if ec else 0) or 0)
+        self._attr_native_value = round((heat[-1] or 0) / used, 1) if used > 0 else None
