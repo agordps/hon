@@ -77,6 +77,13 @@ async def async_setup_entry(hass, entry: ConfigEntry, async_add_entities) -> Non
         if device.has("tankMaintenanceStatus"):
             appliances.extend([HonBaseGenericStatus(hass, coordinator, entry, appliance, "tankMaintenanceStatus", "Tank maintenance", BinarySensorDeviceClass.PROBLEM)])
 
+        if device.has("compressorHeatingCurrentStatus"):
+            appliances.extend([HonBaseGenericStatus(hass, coordinator, entry, appliance, "compressorHeatingCurrentStatus", "Compressor heating", BinarySensorDeviceClass.RUNNING)])
+        if device.has("electricHeatingCurrentStatus"):
+            appliances.extend([HonBaseGenericStatus(hass, coordinator, entry, appliance, "electricHeatingCurrentStatus", "Electric element heating", BinarySensorDeviceClass.RUNNING)])
+        if device.has("auxElecHeatingStatus"):
+            appliances.extend([HonBaseGenericStatus(hass, coordinator, entry, appliance, "auxElecHeatingStatus", "Auxiliary electric heating", BinarySensorDeviceClass.RUNNING)])
+
         # WM additional binary sensors
         if device.has("pause"):
             appliances.extend([HonBasePauseStatus(hass, coordinator, entry, appliance)])

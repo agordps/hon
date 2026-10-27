@@ -182,9 +182,9 @@ async def async_setup_entry(hass, entry: ConfigEntry, async_add_entities) -> Non
         # the last entry is the current day)
         if device.has("energyConsumptionDayCp"):
             appliances.extend([
-                HonWaterHeaterDailyEnergy(hass, coordinator, entry, appliance, "energyConsumptionDayCp", "Energy today compressor", "energy_today_compressor"),
-                HonWaterHeaterDailyEnergy(hass, coordinator, entry, appliance, "energyConsumptionDayEc", "Energy today electric element", "energy_today_element"),
-                HonWaterHeaterDailyEnergy(hass, coordinator, entry, appliance, "accumulatedHeatDay", "Heat delivered today", "heat_today"),
+                HonWaterHeaterDailyEnergy(hass, coordinator, entry, appliance, "energyConsumptionDayCp", "Energy latest day compressor", "energy_today_compressor"),
+                HonWaterHeaterDailyEnergy(hass, coordinator, entry, appliance, "energyConsumptionDayEc", "Energy latest day electric element", "energy_today_element"),
+                HonWaterHeaterDailyEnergy(hass, coordinator, entry, appliance, "accumulatedHeatDay", "Heat delivered latest day", "heat_today"),
                 HonWaterHeaterEnergyToday(hass, coordinator, entry, appliance),
                 HonWaterHeaterCopToday(hass, coordinator, entry, appliance),
             ])
@@ -852,7 +852,7 @@ def _parse_series(value):
 
 
 class HonWaterHeaterDailyEnergy(HonBaseSensorEntity):
-    """Today's value from a 7-day boiler statistics series (oldest first, last = today)."""
+    """Latest day of a 7-day boiler statistics series. The boiler only uploads it occasionally, so it can lag."""
 
     def __init__(self, hass, coordinator, entry, appliance, key, sensor_name, unique_key) -> None:
         super().__init__(coordinator, appliance, key, sensor_name)
@@ -871,7 +871,7 @@ class HonWaterHeaterEnergyToday(HonBaseSensorEntity):
     """Compressor plus electric element energy for today."""
 
     def __init__(self, hass, coordinator, entry, appliance) -> None:
-        super().__init__(coordinator, appliance, "energyConsumptionDayCp", "Energy today")
+        super().__init__(coordinator, appliance, "energyConsumptionDayCp", "Energy latest day")
         self._attr_unique_id = self._mac + "_energy_today"
         self._attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
         self._attr_device_class = SensorDeviceClass.ENERGY
@@ -896,7 +896,7 @@ class HonWaterHeaterCopToday(HonBaseSensorEntity):
     """Heat delivered divided by electricity used today (rounded boiler data, so approximate)."""
 
     def __init__(self, hass, coordinator, entry, appliance) -> None:
-        super().__init__(coordinator, appliance, "accumulatedHeatDay", "COP today")
+        super().__init__(coordinator, appliance, "accumulatedHeatDay", "COP latest day")
         self._attr_unique_id = self._mac + "_cop_today"
         self._attr_icon = "mdi:heat-pump"
         self._attr_state_class = SensorStateClass.MEASUREMENT
