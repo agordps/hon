@@ -139,7 +139,13 @@ class HonDevice(CoordinatorEntity):
 
         for name, values in parameters.items():
             self._attributes.setdefault("parameters", {})[name] = values.get("parNewVal")
-            
+            # Keep the cloud's per-parameter timestamp so sensors can tell how fresh a value is
+            self._attributes.setdefault("parameters_last_update", {})[name] = values.get("lastUpdate")
+
+    def get_last_update(self, item):
+        """ISO timestamp (UTC) of when the appliance last uploaded this parameter, or None."""
+        return self._attributes.get("parameters_last_update", {}).get(item)
+
     @property
     def data(self):
         return {"attributes": self.attributes, "appliance": self.appliance, "statistics": self.statistics, **self.parameters}

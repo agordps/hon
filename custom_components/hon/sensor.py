@@ -838,6 +838,28 @@ class HonHobZoneCompositeTimer(HonBaseSensorEntity):
 
 
 
+# The boiler only uploads its energy statistics now and then (not on every status sync),
+# so the "latest day" entry can be days old. Expose when the cloud last received it.
+STATS_FRESH_HOURS = 26
+
+
+def _stats_freshness(device, key):
+    """Return attributes describing how fresh a statistics parameter is."""
+    raw = device.get_last_update(key) if hasattr(device, "get_last_update") else None
+    if not raw:
+        return {"data_uploaded": None, "data_age_hours": None, "up_to_date": False}
+    try:
+        ts = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+    except ValueError:
+        return {"data_uploaded": raw, "data_age_hours": None, "up_to_date": False}
+    age = (datetime.now(timezone.utc) - ts).total_seconds() / 3600
+    return {
+        "data_uploaded": ts.isoformat(),
+        "data_age_hours": round(age, 1),
+        "up_to_date": age <= STATS_FRESH_HOURS,
+    }
+
+
 def _parse_series(value):
     """Parse a boiler statistics string such as '1;1;1;2;1;1;1' into a list of floats."""
     if value is None or value == "":
@@ -864,7 +886,7 @@ class HonWaterHeaterDailyEnergy(HonBaseSensorEntity):
     def coordinator_update(self):
         series = _parse_series(self._device.get(self._key))
         self._attr_native_value = series[-1] if series else None
-        self._attr_extra_state_attributes = {"last_7_days": series}
+        self._attr_extra_state_attributes = {"last_7_days": series, **_stats_freshness(self._device, self._key)}
 
 
 class HonWaterHeaterEnergyToday(HonBaseSensorEntity):
@@ -888,7 +910,8 @@ class HonWaterHeaterEnergyToday(HonBaseSensorEntity):
         self._attr_native_value = today_cp + today_ec
         n = min(len(cp), len(ec)) if ec else len(cp)
         self._attr_extra_state_attributes = {
-            "last_7_days": [(cp[-n:][i] or 0) + ((ec[-n:][i] or 0) if ec else 0) for i in range(n)]
+            "last_7_days": [(cp[-n:][i] or 0) + ((ec[-n:][i] or 0) if ec else 0) for i in range(n)],
+            **_stats_freshness(self._device, "energyConsumptionDayCp"),
         }
 
 
@@ -910,3 +933,4 @@ class HonWaterHeaterCopToday(HonBaseSensorEntity):
             return
         used = (cp[-1] or 0) + ((ec[-1] if ec else 0) or 0)
         self._attr_native_value = round((heat[-1] or 0) / used, 1) if used > 0 else None
+        self._attr_extra_state_attributes = _stats_freshness(self._device, "accumulatedHeatDay")
